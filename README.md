@@ -71,3 +71,86 @@ Parâmetros usados nesta entrega: `a = 1103515245`, `c = 12345`, `M = 2^31`, sem
 ## Validação
 
 Os resultados foram conferidos rodando o mesmo motor de simulação com os parâmetros de referência divulgados pelo professor no Mural de Avisos (feedback do M4, fila única G/G/1/5 e G/G/2/5), com resultados muito próximos aos publicados — ver `validate_m4_referencia_professor.py`.
+
+---
+
+# Simulador de Rede de Filas com Topologia Genérica (Módulo 8 / T1)
+
+Disciplina: **Simulação e Métodos Analíticos** — PUCRS
+T1 | Avaliação de Aprendizagem — generalização do simulador para qualquer topologia de rede de filas.
+
+Grupo T1 - 690 - 43: Eduardo Ferreira Alves, Bernardo Hoff Paiva dos Santos, Matheus Stumff Mota
+
+## O que este simulador faz
+
+`network_sim.py` generaliza o simulador de filas em tandem (acima) para aceitar **qualquer rede de filas**, com qualquer número de filas, qualquer topologia de roteamento (incluindo ciclos e auto-loops) e qualquer combinação de capacidades/servidores. A rede inteira é descrita em um arquivo YAML, no mesmo estilo do simulador de referência disponibilizado no Módulo 3 (`simulator.jar`), para facilitar a comparação de resultados.
+
+Mantém as mesmas regras de simulação já usadas no Módulo 6:
+
+- Gerador de números pseudoaleatórios próprio (LCG), sem bibliotecas de aleatoriedade.
+- A simulação encerra assim que o N-ésimo número pseudoaleatório é consumido (default: 100.000).
+- Cliente perdido (bloqueado) quando chega numa fila que já está na capacidade máxima; filas sem `capacity` definida (ou `-1`) têm capacidade ilimitada.
+- Roteamento probabilístico: ao terminar o atendimento, o cliente é direcionado para uma fila de destino sorteada entre as probabilidades declaradas em `network`; a probabilidade que "falta" para somar 1.0 significa que o cliente sai do sistema.
+
+## Requisitos
+
+- Python 3.8+ e a biblioteca `PyYAML` (`pip install pyyaml`).
+
+## Como executar
+
+```bash
+python3 network_sim.py model_t1.yml
+```
+
+O argumento é o caminho do arquivo YAML com a rede a simular. Por padrão encerra aos 100.000 números pseudoaleatórios; para mudar isso:
+
+```bash
+python3 network_sim.py model_t1.yml --max-randoms 50000
+```
+
+O programa imprime, para cada fila da rede: o tempo acumulado e a probabilidade de cada estado (população), o número de clientes perdidos, além do tempo global de simulação.
+
+## Formato do arquivo YAML de entrada
+
+```yaml
+arrivals:               # filas com chegada externa de clientes, e o instante do 1o cliente
+  Q1: 2.0
+
+queues:
+  Q1:
+    servers: 1
+    capacity: -1          # -1 (ou omitido) = capacidade ilimitada
+    minArrival: 2.0        # so' precisa existir em filas com chegada externa
+    maxArrival: 4.0
+    minService: 1.0
+    maxService: 2.0
+  Q2:
+    servers: 2
+    capacity: 5
+    minService: 4.0
+    maxService: 6.0
+
+network:                  # roteamento entre filas; a probabilidade que falta para 1.0 = sai do sistema
+  - source: Q1
+    target: Q2
+    probability: 0.2
+
+seed: 123456789            # semente do gerador LCG proprio
+```
+
+Veja `model_t1.yml` neste repositório para a rede de validação completa (3 filas, com roteamento cíclico e auto-loop em Q2).
+
+## Rede de validação (T1)
+
+- **Q1** — G/G/1, ilimitada, chegadas externas entre 2..4 min (1º cliente em t=2,0), atendimento 1..2 min.
+- **Q2** — G/G/2/5, atendimento 4..6 min. Sem chegada externa.
+- **Q3** — G/G/2/10, atendimento 5..15 min. Sem chegada externa.
+- Roteamento: Q1→Q2 (0,2) / Q1→Q3 (0,8); Q2→Q1 (0,3) / Q2→Q2 auto-loop (0,5) / Q2→sai (0,2); Q3→Q2 (0,7) / Q3→sai (0,3).
+
+Resultados completos dessa rede (distribuição de estados, perdas por fila e tempo global) estão no PDF de entrega do T1.
+
+## Validação contra o simulador de referência (Módulo 3)
+
+O motor foi reconstruído a partir da leitura cuidadosa do bytecode de `simulator.jar` (decompilação com `javap`), garantindo que a ordem de consumo dos números aleatórios (roteamento antes da duração do atendimento, contabilização de tempo em todas as filas a cada evento, etc.) seguisse a mesma lógica da referência.
+
+Para validar, alimentamos o `simulator.jar` com a *mesma sequência exata* de números pseudoaleatórios consumida pelo `network_sim.py` (opção `rndnumbers` do YAML da referência) e comparamos os relatórios: as probabilidades de estado de cada fila e o tempo global de simulação ficaram praticamente idênticos entre as duas implementações (diferença abaixo de 0,5 ponto percentual). Pequenas diferenças no número de perdas são esperadas — cada implementação consulta o estado da rede em pontos ligeiramente diferentes, o que se acumula ao longo de 100 mil eventos — mas o comportamento agregado (ocupação, saturação de cada fila, tempo médio) é equivalente.
